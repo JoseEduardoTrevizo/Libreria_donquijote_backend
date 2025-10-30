@@ -1,5 +1,7 @@
 const validator = require("validator");
 const Book = require("../models/Books");
+const fs = require("fs");
+const path = require("path");
 const { validarDatosCatalogo } = require("../helpers/validar");
 
 const crear = async (req, res) => {
@@ -221,6 +223,90 @@ const buscar_libro = async (req, res) => {
   }
 };
 
+const subir = async (req, res) => {
+  //Configurar multer
+
+  //Recoger el fichero de imagen subido
+  if (!req.file && !req.files) {
+    return res.status(404).json({
+      status: "error",
+      mensaje: "Peticion invalida, no se ha subido ningun archivo",
+    });
+  }
+
+  //Nombre del fichero
+  let archivo = req.file.originalname;
+
+  //Extension del fichero
+  let archivo_split = archivo.split(".");
+  let extension = archivo_split[1];
+  //Comprobar la extension, si no es valida borrar fichero y devolver error
+  if (
+    extension != "png" &&
+    extension != "jpg" &&
+    extension != "jpeg" &&
+    extension != "webp"
+  ) {
+    //Borrar fichero subido
+    fs.unlink(req.file.path, (err) => {
+      return res.status(400).json({
+        status: "error",
+        mensaje: "Formato no valido",
+      });
+    });
+  } else {
+    //Si todo es valido, guardar imagen en base de datos
+
+    try {
+      // Recoger el id del libro a editar
+      let bookId = req.params.id;
+
+      //Bucar  y actualizar el libro
+      const bookActualizado = await Book.findOneAndUpdate(
+        { _id: bookId },
+        { imagen: req.file.filename },
+        { new: true }
+      );
+
+      if (!bookActualizado) {
+        return res.status(404).json({
+          status: "error",
+          mensaje: "Libro no encontrado",
+        });
+      }
+
+      // Devolver respuesta
+      return res.status(200).json({
+        status: "success",
+        book: bookActualizado,
+        file: req.file,
+      });
+    } catch (error) {
+      return res.status(500).json({
+        status: "error",
+        mensaje: "Error al actualizar el libro",
+        error: error.message,
+      });
+    }
+  }
+};
+
+const imagen = async (req, res) => {
+  let fichero = req.params.fichero;
+
+  let ruta_fisica = "./imagen/books/" + fichero;
+
+  fs.stat(ruta_fisica, (error, existe) => {
+    if (existe) {
+      return res.sendFile(path.resolve(ruta_fisica));
+    } else {
+      return res.status(404).json({
+        status: "error",
+        mensaje: "La imagen no existe",
+      });
+    }
+  });
+};
 module.exports = {
   crear,
   catalogo,
@@ -228,4 +314,6 @@ module.exports = {
   borrar,
   editar_catalogo,
   buscar_libro,
+  subir,
+  imagen,
 };

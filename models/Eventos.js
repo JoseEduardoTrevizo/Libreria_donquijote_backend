@@ -29,7 +29,7 @@ const EventosSchema = new Schema({
 
 EventosSchema.index(
   { fecha_creacion: 1 },
-  { expireAfterSeconds: 30 * 24 * 60 * 60 }
-); // Expira después de 30 días
+  { expireAfterSeconds: 2 * 24 * 60 * 60 }
+); // Expira después de 2 días
 
 module.exports = model("Eventos", EventosSchema, "Eventos");

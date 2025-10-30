@@ -43,7 +43,7 @@ const BooksSchema = new Schema({
   imagen: {
     type: String,
     required: false,
-    default: "/imagen/books/default_donquijote.png",
+    default: "/imagen/imagen_no-disponible.png",
   },
 });
 
