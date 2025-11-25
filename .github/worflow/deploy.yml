@@ -1,0 +1,195 @@
+# .github/workflows/ci-cd.yml
+
+name: CI/CD Node.js Backend
+
+# CUÁNDO SE EJECUTA (Triggers)
+on:
+  push:
+    branches: [main, develop] # Al hacer push a estas ramas
+  pull_request:
+    branches: [main] # Al crear/actualizar PR a main
+  workflow_dispatch: # Permite ejecución manual
+
+# VARIABLES DE ENTORNO GLOBALES
+env:
+  NODE_VERSION: "18"
+
+jobs:
+  # ========================================
+  # JOB 1: LINTING Y FORMATO
+  # ========================================
+  lint:
+    name: Linting y Code Quality
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout código
+        uses: actions/checkout@v3
+
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: 📦 Instalar dependencias
+        run: npm ci
+
+      - name: 🔍 Ejecutar ESLint
+        run: npm run lint
+        continue-on-error: true # No falla el workflow si hay warnings
+
+      - name: 💅 Verificar formato (Prettier)
+        run: npm run format:check
+        continue-on-error: true
+
+  # ========================================
+  # JOB 2: TESTS UNITARIOS
+  # ========================================
+  test:
+    name: Tests Unitarios
+    runs-on: ubuntu-latest
+
+    # Matriz para probar en múltiples versiones de Node
+    strategy:
+      matrix:
+        node-version: [16, 18, 20]
+
+    steps:
+      - name: 📥 Checkout código
+        uses: actions/checkout@v3
+
+      - name: 🟢 Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: "npm"
+
+      - name: 📦 Instalar dependencias
+        run: npm ci
+
+      - name: 🧪 Ejecutar tests
+        run: npm test
+        env:
+          NODE_ENV: test
+          MONGODB_URI: ${{ secrets.MONGODB_TEST_URI }}
+
+      - name: 📊 Generar reporte de cobertura
+        run: npm run test:coverage
+
+      - name: 📤 Subir reporte de cobertura
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./coverage/coverage-final.json
+          flags: unittests
+
+  # ========================================
+  # JOB 3: TESTS DE INTEGRACIÓN
+  # ========================================
+  integration-tests:
+    name: Tests de Integración
+    runs-on: ubuntu-latest
+
+    # Servicios necesarios (MongoDB, Redis, etc)
+    services:
+      mongodb:
+        image: mongo:6
+        ports:
+          - 27017:27017
+        env:
+          MONGO_INITDB_ROOT_USERNAME: testuser
+          MONGO_INITDB_ROOT_PASSWORD: testpass
+
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+
+    steps:
+      - name: 📥 Checkout código
+        uses: actions/checkout@v3
+
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: 📦 Instalar dependencias
+        run: npm ci
+
+      - name: 🔗 Ejecutar tests de integración
+        run: npm run test:integration
+        env:
+          MONGODB_URI: mongodb://testuser:testpass@localhost:27017/testdb
+          REDIS_URL: redis://localhost:6379
+
+  # ========================================
+  # JOB 4: BUILD Y VERIFICACIÓN
+  # ========================================
+  build:
+    name: Build del Proyecto
+    runs-on: ubuntu-latest
+    needs: [lint, test] # Solo se ejecuta si lint y test pasan
+
+    steps:
+      - name: 📥 Checkout código
+        uses: actions/checkout@v3
+
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: 📦 Instalar dependencias
+        run: npm ci
+
+      - name: 🏗️ Build del proyecto
+        run: npm run build
+
+      - name: 📦 Crear artefacto
+        uses: actions/upload-artifact@v3
+        with:
+          name: build-files
+          path: dist/
+          retention-days: 7
+
+  # ========================================
+  # JOB 5: SECURITY SCAN
+  # ========================================
+  security:
+    name: Análisis de Seguridad
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout código
+        uses: actions/checkout@v3
+
+      - name: 🔒 Ejecutar npm audit
+        run: npm audit --production
+        continue-on-error: true
+
+      - name: 🛡️ Snyk Security Scan
+        uses: snyk/actions/node@master
+        continue-on-error: true
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+  # ========================================
+  # JOB 6: NOTIFICACIÓN
+  # ========================================
+  notify:
+    name: Notificación de Resultados
+    runs-on: ubuntu-latest
+    needs: [lint, test, build, security]
+    if: always() # Se ejecuta siempre, incluso si otros jobs fallan
+
+    steps:
+      - name: 📧 Enviar notificación a Slack
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          text: "CI/CD Pipeline completado"
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+        if: always()
