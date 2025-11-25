@@ -27,6 +27,18 @@ jobs:
         run: |
           echo "$SSH_PRIVATE_KEY" > private_key.pem
           chmod 600 private_key.pem
-          scp -i private_key.pem -r ./build/* $SERVER_USER@$SERVER_IP:/var/www/html/
+
+          # Copiar archivos del proyecto (excluyendo node_modules y .git)
+          rsync -avz --exclude 'node_modules' --exclude '.git' --exclude '.env' \
+            -e "ssh -i private_key.pem -o StrictHostKeyChecking=no" \
+            ./ $SERVER_USER@$SERVER_IP:/var/www/mi-backend/
+
+          # Conectar al servidor e instalar dependencias y reiniciar
+          ssh -i private_key.pem -o StrictHostKeyChecking=no $SERVER_USER@$SERVER_IP << 'EOF'
+            cd /var/www/mi-backend
+            npm install --production
+            pm2 restart mi-backend || pm2 start index.js --name mi-backend
+          EOF
+
           rm private_key.pem
           echo "Deployment completed successfully."
